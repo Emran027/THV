@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Territory Hierarchy Viewer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #21262d;
+    --surface3: #30363d;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --text-dim: #6e7681;
+    --accent: #58a6ff;
+    --accent2: #3fb950;
+    --warn: #d29922;
+    --danger: #f85149;
+    --purple: #bc8cff;
+
+    --l0: #58a6ff; /* Country */
+    --l1: #3fb950; /* National */
+    --l2: #f78166; /* Zone/Wing */
+    --l3: #d29922; /* Division */
+    --l4: #bc8cff; /* Region/Area */
+    --l5: #39d353; /* Territory/Base */
+    --l6: #ff7b72; /* DB/Distributor */
+    --l7: #ffa657; /* Point/SO */
+    --l8: #79c0ff; /* Route */
+    --l9: #e3b341; /* extra */
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+  }
+
+  /* ── UPLOAD SCREEN ── */
+  #upload-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 32px;
+    gap: 24px;
+  }
+
+  .brand {
+    text-align: center;
+  }
+  .brand h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+  }
+  .brand p {
+    color: var(--text-muted);
+    margin-top: 6px;
+    font-size: 14px;
+  }
+
+  .upload-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 36px;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 8px;
+  }
+
+  .field input[type="text"] {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .field input[type="text"]:focus {
+    border-color: var(--accent);
+  }
+
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 32px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(88,166,255,0.05);
+  }
+  .drop-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .drop-zone .dz-icon { font-size: 36px; margin-bottom: 10px; }
+  .drop-zone .dz-text { color: var(--text-muted); font-size: 13px; }
+  .drop-zone .dz-file { color: var(--accent2); font-weight: 600; margin-top: 6px; font-size: 13px; }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #0d1117;
+    border: none;
+    border-radius: 8px;
+    padding: 11px 20px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    width: 100%;
+    transition: opacity 0.2s;
+  }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .error-msg {
+    background: rgba(248,81,73,0.12);
+    border: 1px solid rgba(248,81,73,0.3);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--danger);
+    font-size: 13px;
+    display: none;
+  }
+
+  /* ── MAIN APP ── */
+  #app-screen { display: none; flex-direction: column; min-height: 100vh; }
+
+  .top-bar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .top-bar .company-badge {
+    background: rgba(88,166,255,0.12);
+    border: 1px solid rgba(88,166,255,0.3);
+    border-radius: 6px;
+    padding: 4px 12px;
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 14px;
+  }
+  .top-bar .stats {
+    color: var(--text-muted);
+    font-size: 12px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .top-bar .stats span { display: flex; align-items: center; gap: 5px; }
+  .top-bar .btn-reset {
+    margin-left: auto;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 12px;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .top-bar .btn-reset:hover { color: var(--text); border-color: var(--text-muted); }
+
+  .tabs {
+    display: flex;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    gap: 4px;
+  }
+  .tab-btn {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 12px 16px;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-badge {
+    background: var(--surface3);
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .tab-btn.active .tab-badge { background: rgba(88,166,255,0.2); color: var(--accent); }
+
+  .tab-panel { display: none; flex: 1; overflow: hidden; }
+  .tab-panel.active { display: flex; flex-direction: column; }
+
+  /* ── TREE TAB ── */
+  .tree-toolbar {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    background: var(--surface);
+  }
+  .search-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+    max-width: 380px;
+  }
+  .search-wrap input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 8px 12px 8px 34px;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .search-wrap input:focus { border-color: var(--accent); }
+  .search-wrap .ico {
+    position: absolute;
+    left: 10px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .search-count {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .btn-sm {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 12px;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .btn-sm:hover { color: var(--text); border-color: var(--text-muted); }
+
+  .tree-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+  }
+
+  /* Tree nodes */
+  .tree-node { margin: 0; }
+  .tree-node-inner {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    padding: 3px 0;
+  }
+  .tree-indent { display: flex; align-items: stretch; }
+  .tree-line {
+    width: 20px;
+    min-height: 100%;
+    border-left: 1px solid var(--border);
+    margin-left: 9px;
+    flex-shrink: 0;
+  }
+  .tree-line.last { border-left: none; }
+
+  .tree-toggle {
+    width: 18px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-dim);
+    font-size: 10px;
+    flex-shrink: 0;
+    user-select: none;
+    margin-top: 2px;
+  }
+  .tree-toggle:hover { color: var(--text); }
+  .tree-toggle.leaf { cursor: default; color: transparent; }
+
+  .node-card {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 2px 0;
+    cursor: default;
+    transition: border-color 0.15s, background 0.15s;
+    min-width: 0;
+  }
+  .node-card:hover { border-color: var(--surface3); background: var(--surface2); }
+  .node-card.highlighted { border-color: var(--warn) !important; background: rgba(210,153,34,0.08) !important; }
+  .node-card.search-match { border-color: var(--accent2) !important; background: rgba(63,185,80,0.08) !important; }
+
+  .node-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .level-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    flex-shrink: 0;
+  }
+  .node-code {
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    background: var(--surface2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+  .node-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+    min-width: 0;
+  }
+  .node-managers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 5px;
+  }
+  .manager-chip {
+    font-size: 11px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    color: var(--text-muted);
+  }
+  .manager-chip:empty { display: none; }
+
+  .tree-children { padding-left: 20px; }
+  .tree-children.collapsed { display: none; }
+
+  /* ── DUPLICATE TAB ── */
+  .dup-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+  }
+  .dup-empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+  .dup-empty .ico { font-size: 40px; margin-bottom: 12px; }
+
+  .dup-group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .dup-header {
+    background: rgba(248,81,73,0.08);
+    border-bottom: 1px solid rgba(248,81,73,0.2);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .dup-name {
+    font-weight: 700;
+    color: var(--danger);
+    font-size: 14px;
+    flex: 1;
+  }
+  .dup-count-badge {
+    background: rgba(248,81,73,0.2);
+    color: var(--danger);
+    border-radius: 10px;
+    padding: 2px 10px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .dup-items { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .dup-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .dup-item-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .dup-item-code {
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--warn);
+    background: rgba(210,153,34,0.1);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .dup-context { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  .dup-context-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    font-size: 12px;
+  }
+  .dup-ctx-label {
+    color: var(--text-dim);
+    min-width: 70px;
+    flex-shrink: 0;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 10px;
+    padding-top: 2px;
+  }
+  .dup-ctx-val { color: var(--text-muted); }
+  .dup-ctx-val span {
+    display: inline-block;
+    background: var(--surface3);
+    border-radius: 4px;
+    padding: 1px 7px;
+    margin: 1px 2px;
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  /* ── SUMMARY TAB ── */
+  .summary-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .summary-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .summary-card .sc-level {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+  .summary-card .sc-count {
+    font-size: 32px;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .summary-card .sc-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .level-table {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .level-table table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .level-table th {
+    background: var(--surface2);
+    padding: 10px 16px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .level-table td {
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .level-table tr:last-child td { border-bottom: none; }
+  .level-table tr:hover td { background: var(--surface2); }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
+
+  .hidden { display: none !important; }
+
+  /* Loading */
+  #loading-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(13,17,23,0.85);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 14px;
+  }
+  #loading-overlay.show { display: flex; }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { color: var(--text-muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text">Processing data...</div>
+</div>
+
+<!-- UPLOAD SCREEN -->
+<div id="upload-screen">
+  <div class="brand">
+    <h1>⬡ Territory Hierarchy Viewer</h1>
+    <p>Upload any Sokrio territory bulk export to explore the full hierarchy</p>
+  </div>
+  <div class="upload-card">
+    <div class="field">
+      <label>Company Name</label>
+      <input type="text" id="company-name" placeholder="e.g. Polar Foods, ACI, PRAN..." />
+    </div>
+    <div class="field">
+      <label>Territory Bulk Export (.xlsx)</label>
+      <div class="drop-zone" id="drop-zone">
+        <input type="file" id="file-input" accept=".xlsx,.xls" />
+        <div class="dz-icon">📂</div>
+        <div class="dz-text">Click to browse or drag & drop your .xlsx file</div>
+        <div class="dz-file" id="dz-filename"></div>
+      </div>
+    </div>
+    <div class="error-msg" id="error-msg"></div>
+    <button class="btn-primary" id="btn-generate" disabled>Generate Hierarchy</button>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app-screen">
+  <div class="top-bar">
+    <span class="company-badge" id="company-display"></span>
+    <div class="stats" id="top-stats"></div>
+    <button class="btn-reset" onclick="resetApp()">↩ Load New File</button>
+  </div>
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('tree', this)">
+      🌳 Hierarchy Tree <span class="tab-badge" id="badge-tree">0</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('dup', this)">
+      ⚠️ Duplicates <span class="tab-badge" id="badge-dup">0</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('summary', this)">
+      📊 Level Summary
+    </button>
+  </div>
+
+  <!-- TREE TAB -->
+  <div class="tab-panel active" id="tab-tree">
+    <div class="tree-toolbar">
+      <div class="search-wrap">
+        <span class="ico">🔍</span>
+        <input type="text" id="search-input" placeholder="Search name, code, manager..." oninput="doSearch(this.value)" />
+      </div>
+      <span class="search-count" id="search-count"></span>
+      <button class="btn-sm" onclick="expandAll()">Expand All</button>
+      <button class="btn-sm" onclick="collapseAll()">Collapse All</button>
+      <button class="btn-sm" onclick="clearSearch()">Clear Search</button>
+    </div>
+    <div class="tree-container" id="tree-container"></div>
+  </div>
+
+  <!-- DUPLICATE TAB -->
+  <div class="tab-panel" id="tab-dup">
+    <div class="dup-container" id="dup-container"></div>
+  </div>
+
+  <!-- SUMMARY TAB -->
+  <div class="tab-panel" id="tab-summary">
+    <div class="summary-container" id="summary-container"></div>
+  </div>
+</div>
+
+<script>
+// ── LEVEL COLORS ──
+const LEVEL_COLORS = [
+  '#58a6ff','#3fb950','#f78166','#d29922',
+  '#bc8cff','#39d353','#ff7b72','#ffa657','#79c0ff','#e3b341'
+];
+
+let appData = null; // { levels, rootNodes, duplicates }
+
+// ── FILE UPLOAD LOGIC ──
+const fileInput = document.getElementById('file-input');
+const dropZone = document.getElementById('drop-zone');
+const dzFilename = document.getElementById('dz-filename');
+const btnGenerate = document.getElementById('btn-generate');
+const companyInput = document.getElementById('company-name');
+let selectedFile = null;
+
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) setFile(e.target.files[0]);
+});
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+});
+companyInput.addEventListener('input', checkReady);
+
+function setFile(f) {
+  selectedFile = f;
+  dzFilename.textContent = f.name;
+  checkReady();
+}
+function checkReady() {
+  btnGenerate.disabled = !(selectedFile && companyInput.value.trim());
+}
+
+document.getElementById('btn-generate').addEventListener('click', () => {
+  showError('');
+  showLoading(true);
+  setTimeout(() => {
+    try {
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          processFile(e.target.result, companyInput.value.trim());
+        } catch(err) {
+          showLoading(false);
+          showError('Error processing file: ' + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(selectedFile);
+    } catch(err) {
+      showLoading(false);
+      showError(err.message);
+    }
+  }, 50);
+});
+
+function showLoading(v) {
+  document.getElementById('loading-overlay').classList.toggle('show', v);
+}
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+// ── PARSE FILE ──
+function processFile(buffer, companyName) {
+  const wb = XLSX.read(buffer, { type: 'arraybuffer' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+  if (!rows.length) throw new Error('Empty file');
+
+  const headers = rows[0].map(h => String(h || '').trim());
+
+  // Detect level triplets: Code | LevelName | Manager
+  const levels = [];
+  for (let i = 0; i < headers.length - 1; i++) {
+    if (headers[i].toLowerCase() === 'code' && i + 1 < headers.length) {
+      const nameCol = headers[i + 1];
+      const managerCol = headers[i + 2] || '';
+      if (nameCol && nameCol.toLowerCase() !== 'created at' && nameCol.toLowerCase() !== 'code') {
+        levels.push({ name: nameCol, codeIdx: i, nameIdx: i + 1, managerIdx: i + 2 });
+      }
+    }
+  }
+
+  if (!levels.length) throw new Error('Could not detect hierarchy levels from this file.');
+
+  // Build node map per level
+  // nodeMap: levelIndex -> Map<code|name, node>
+  const nodesByLevel = levels.map(() => new Map()); // key: code+name
+  const rootNodes = [];
+
+  function getKey(code, name) {
+    return `${String(code).trim()}|||${String(name).trim()}`;
+  }
+
+  // Process each data row
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || row.every(c => !c)) continue;
+
+    let parentNode = null;
+
+    for (let li = 0; li < levels.length; li++) {
+      const lv = levels[li];
+      const code = String(row[lv.codeIdx] || '').trim();
+      const name = String(row[lv.nameIdx] || '').trim();
+      const managerRaw = String(row[lv.managerIdx] || '').trim();
+
+      if (!name && !code) { parentNode = null; continue; }
+
+      const key = getKey(code || name, name || code);
+      let node = nodesByLevel[li].get(key);
+
+      if (!node) {
+        node = {
+          id: key,
+          code: code,
+          name: name,
+          level: li,
+          levelName: lv.name,
+          managers: [],
+          children: [],
+          parent: parentNode,
+        };
+        nodesByLevel[li].set(key, node);
+
+        if (parentNode) {
+          // Check not already child
+          if (!parentNode.children.find(c => c.id === node.id)) {
+            parentNode.children.push(node);
+          }
+        } else if (li === 0) {
+          if (!rootNodes.find(n => n.id === node.id)) rootNodes.push(node);
+        } else {
+          // Orphan - add to root
+          if (!rootNodes.find(n => n.id === node.id)) rootNodes.push(node);
+        }
+      } else {
+        // Node exists - if parent changed (different path), update children link
+        if (parentNode && !parentNode.children.find(c => c.id === node.id)) {
+          parentNode.children.push(node);
+        }
+      }
+
+      // Merge managers
+      if (managerRaw) {
+        const mgrs = managerRaw.split(',').map(m => m.trim()).filter(m => m);
+        mgrs.forEach(m => {
+          if (!node.managers.includes(m)) node.managers.push(m);
+        });
+      }
+
+      parentNode = node;
+    }
+  }
+
+  // ── DUPLICATE DETECTION ──
+  // Same name, different code — across all levels separately and across same level
+  const duplicates = findDuplicates(nodesByLevel, levels);
+
+  // ── STATS ──
+  const stats = levels.map((lv, i) => ({
+    name: lv.name,
+    count: nodesByLevel[i].size,
+    color: LEVEL_COLORS[i % LEVEL_COLORS.length]
+  }));
+
+  appData = { levels, rootNodes, nodesByLevel, duplicates, stats, companyName };
+
+  renderApp();
+  showLoading(false);
+}
+
+function findDuplicates(nodesByLevel, levels) {
+  const groups = [];
+
+  levels.forEach((lv, li) => {
+    // Group by name (case-insensitive)
+    const byName = new Map();
+    nodesByLevel[li].forEach(node => {
+      const key = node.name.toLowerCase().trim();
+      if (!byName.has(key)) byName.set(key, []);
+      byName.get(key).push(node);
+    });
+
+    byName.forEach((nodes, nameKey) => {
+      // Filter: more than 1 unique code
+      const codes = [...new Set(nodes.map(n => n.code))];
+      if (codes.length > 1) {
+        groups.push({
+          name: nodes[0].name,
+          levelName: lv.name,
+          levelIdx: li,
+          instances: nodes.map(n => ({
+            code: n.code,
+            name: n.name,
+            parent: n.parent ? { code: n.parent.code, name: n.parent.name, levelName: n.parent.levelName } : null,
+            children: n.children.map(c => ({ code: c.code, name: c.name, levelName: c.levelName }))
+          }))
+        });
+      }
+    });
+  });
+
+  return groups;
+}
+
+// ── RENDER APP ──
+function renderApp() {
+  const { companyName, stats, rootNodes, duplicates } = appData;
+
+  document.getElementById('upload-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display = 'flex';
+
+  document.getElementById('company-display').textContent = companyName;
+
+  // Stats bar
+  const totalNodes = stats.reduce((s, l) => s + l.count, 0);
+  document.getElementById('top-stats').innerHTML =
+    `<span>📦 ${stats.length} levels</span>` +
+    `<span>🔢 ${totalNodes} nodes</span>` +
+    `<span>⚠️ ${duplicates.length} duplicate groups</span>`;
+
+  document.getElementById('badge-tree').textContent = totalNodes;
+  document.getElementById('badge-dup').textContent = duplicates.length;
+
+  renderTree();
+  renderDuplicates();
+  renderSummary();
+}
+
+// ── TREE RENDER ──
+function renderTree() {
+  const container = document.getElementById('tree-container');
+  container.innerHTML = '';
+  appData.rootNodes.forEach(node => {
+    container.appendChild(buildNodeEl(node, 0));
+  });
+}
+
+function buildNodeEl(node, depth) {
+  const color = LEVEL_COLORS[node.level % LEVEL_COLORS.length];
+  const hasChildren = node.children.length > 0;
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'tree-node';
+  wrapper.dataset.nodeId = node.id;
+
+  const inner = document.createElement('div');
+  inner.className = 'tree-node-inner';
+
+  // Toggle
+  const toggle = document.createElement('div');
+  toggle.className = 'tree-toggle' + (hasChildren ? '' : ' leaf');
+  toggle.innerHTML = hasChildren ? '▶' : '•';
+  if (hasChildren) {
+    toggle.onclick = () => toggleNode(toggle, childrenEl);
+  }
+
+  // Card
+  const card = document.createElement('div');
+  card.className = 'node-card';
+  card.dataset.searchText = [node.name, node.code, ...node.managers].join(' ').toLowerCase();
+
+  const header = document.createElement('div');
+  header.className = 'node-header';
+
+  const badge = document.createElement('span');
+  badge.className = 'level-badge';
+  badge.style.background = color + '22';
+  badge.style.color = color;
+  badge.style.border = `1px solid ${color}44`;
+  badge.textContent = node.levelName;
+
+  const codeEl = document.createElement('span');
+  codeEl.className = 'node-code';
+  codeEl.textContent = node.code || '—';
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'node-name';
+  nameEl.textContent = node.name;
+
+  header.appendChild(badge);
+  header.appendChild(codeEl);
+  header.appendChild(nameEl);
+  card.appendChild(header);
+
+  if (node.managers.length > 0) {
+    const mgrsEl = document.createElement('div');
+    mgrsEl.className = 'node-managers';
+    node.managers.forEach(m => {
+      const chip = document.createElement('span');
+      chip.className = 'manager-chip';
+      chip.textContent = m;
+      mgrsEl.appendChild(chip);
+    });
+    card.appendChild(mgrsEl);
+  }
+
+  inner.appendChild(toggle);
+  inner.appendChild(card);
+  wrapper.appendChild(inner);
+
+  // Children
+  const childrenEl = document.createElement('div');
+  childrenEl.className = 'tree-children collapsed';
+  if (hasChildren) {
+    node.children.forEach(child => {
+      childrenEl.appendChild(buildNodeEl(child, depth + 1));
+    });
+  }
+  wrapper.appendChild(childrenEl);
+
+  return wrapper;
+}
+
+function toggleNode(toggle, childrenEl) {
+  const collapsed = childrenEl.classList.contains('collapsed');
+  childrenEl.classList.toggle('collapsed', !collapsed);
+  toggle.innerHTML = collapsed ? '▼' : '▶';
+}
+
+function expandAll() {
+  document.querySelectorAll('.tree-children').forEach(el => el.classList.remove('collapsed'));
+  document.querySelectorAll('.tree-toggle:not(.leaf)').forEach(el => el.innerHTML = '▼');
+}
+function collapseAll() {
+  document.querySelectorAll('.tree-children').forEach(el => el.classList.add('collapsed'));
+  document.querySelectorAll('.tree-toggle:not(.leaf)').forEach(el => el.innerHTML = '▶');
+}
+
+// ── SEARCH ──
+function doSearch(q) {
+  const term = q.trim().toLowerCase();
+  const cards = document.querySelectorAll('.node-card');
+  let matchCount = 0;
+
+  cards.forEach(card => {
+    card.classList.remove('search-match');
+    if (term && card.dataset.searchText && card.dataset.searchText.includes(term)) {
+      card.classList.add('search-match');
+      matchCount++;
+      // Expand all ancestors
+      let el = card.closest('.tree-node');
+      while (el) {
+        const parent = el.parentElement?.closest('.tree-node');
+        if (parent) {
+          const childrenEl = parent.querySelector(':scope > .tree-children');
+          const toggle = parent.querySelector(':scope > .tree-node-inner > .tree-toggle');
+          if (childrenEl) { childrenEl.classList.remove('collapsed'); }
+          if (toggle && !toggle.classList.contains('leaf')) toggle.innerHTML = '▼';
+        }
+        el = parent;
+      }
+    }
+  });
+
+  document.getElementById('search-count').textContent =
+    term ? `${matchCount} match${matchCount !== 1 ? 'es' : ''}` : '';
+}
+
+function clearSearch() {
+  document.getElementById('search-input').value = '';
+  doSearch('');
+}
+
+// ── DUPLICATES ──
+function renderDuplicates() {
+  const container = document.getElementById('dup-container');
+  const { duplicates } = appData;
+
+  if (!duplicates.length) {
+    container.innerHTML = `<div class="dup-empty"><div class="ico">✅</div><div>No duplicates found — all names are unique within each level.</div></div>`;
+    return;
+  }
+
+  container.innerHTML = '';
+  duplicates.forEach(group => {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'dup-group';
+
+    groupEl.innerHTML = `
+      <div class="dup-header">
+        <span class="dup-name">${escHtml(group.name)}</span>
+        <span style="font-size:11px;color:var(--text-muted)">Level: ${escHtml(group.levelName)}</span>
+        <span class="dup-count-badge">${group.instances.length} instances</span>
+      </div>
+    `;
+
+    const items = document.createElement('div');
+    items.className = 'dup-items';
+
+    group.instances.forEach(inst => {
+      const itemEl = document.createElement('div');
+      itemEl.className = 'dup-item';
+
+      const parentHtml = inst.parent
+        ? `<span>${escHtml(inst.parent.levelName)}</span> <span>${escHtml(inst.parent.code || '—')}</span> <span>${escHtml(inst.parent.name)}</span>`
+        : `<span style="color:var(--text-dim)">— (Root level)</span>`;
+
+      const childHtml = inst.children.length
+        ? inst.children.slice(0, 8).map(c => `<span>${escHtml(c.name)}${c.code ? ' [' + escHtml(c.code) + ']' : ''}</span>`).join('') +
+          (inst.children.length > 8 ? `<span>+${inst.children.length - 8} more</span>` : '')
+        : `<span style="color:var(--text-dim)">— (No children)</span>`;
+
+      itemEl.innerHTML = `
+        <div class="dup-item-top">
+          <span class="dup-item-code">CODE: ${escHtml(inst.code || '—')}</span>
+          <span style="font-size:12px;color:var(--text-muted)">${escHtml(inst.name)}</span>
+        </div>
+        <div class="dup-context">
+          <div class="dup-context-row">
+            <span class="dup-ctx-label">⬆ Parent</span>
+            <div class="dup-ctx-val">${parentHtml}</div>
+          </div>
+          <div class="dup-context-row">
+            <span class="dup-ctx-label">⬇ Children</span>
+            <div class="dup-ctx-val">${childHtml}</div>
+          </div>
+        </div>
+      `;
+      items.appendChild(itemEl);
+    });
+
+    groupEl.appendChild(items);
+    container.appendChild(groupEl);
+  });
+}
+
+// ── SUMMARY ──
+function renderSummary() {
+  const container = document.getElementById('summary-container');
+  const { stats, nodesByLevel, levels } = appData;
+
+  // Cards
+  const grid = document.createElement('div');
+  grid.className = 'summary-grid';
+  stats.forEach(s => {
+    const card = document.createElement('div');
+    card.className = 'summary-card';
+    card.innerHTML = `
+      <div class="sc-level" style="color:${s.color}">${escHtml(s.name)}</div>
+      <div class="sc-count" style="color:${s.color}">${s.count}</div>
+      <div class="sc-sub">nodes</div>
+    `;
+    grid.appendChild(card);
+  });
+  container.appendChild(grid);
+
+  // Table
+  const tableWrap = document.createElement('div');
+  tableWrap.className = 'level-table';
+
+  let tableHtml = `<table>
+    <thead><tr>
+      <th>Level</th><th>Total Nodes</th><th>Total Managers</th><th>Avg Managers / Node</th>
+    </tr></thead><tbody>`;
+
+  levels.forEach((lv, i) => {
+    const nodes = [...nodesByLevel[i].values()];
+    const totalMgr = nodes.reduce((s, n) => s + n.managers.length, 0);
+    const avg = nodes.length ? (totalMgr / nodes.length).toFixed(1) : 0;
+    const color = LEVEL_COLORS[i % LEVEL_COLORS.length];
+    tableHtml += `<tr>
+      <td><span class="level-badge" style="background:${color}22;color:${color};border:1px solid ${color}44;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;">${escHtml(lv.name)}</span></td>
+      <td style="font-weight:700">${nodes.length}</td>
+      <td>${totalMgr}</td>
+      <td>${avg}</td>
+    </tr>`;
+  });
+
+  tableHtml += `</tbody></table>`;
+  tableWrap.innerHTML = tableHtml;
+  container.appendChild(tableWrap);
+}
+
+// ── TABS ──
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ── RESET ──
+function resetApp() {
+  appData = null;
+  selectedFile = null;
+  document.getElementById('file-input').value = '';
+  document.getElementById('dz-filename').textContent = '';
+  document.getElementById('company-name').value = '';
+  document.getElementById('search-input').value = '';
+  btnGenerate.disabled = true;
+  document.getElementById('app-screen').style.display = 'none';
+  document.getElementById('upload-screen').style.display = 'flex';
+  // Reset tabs
+  document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', i === 0));
+  document.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === 0));
+}
+
+// ── UTILS ──
+function escHtml(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
