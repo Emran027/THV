@@ -293,10 +293,16 @@
   </div>
 
   <div class="tab-panel active" id="tab-tree">
-    <div class="tree-toolbar">
-      <div class="search-wrap">
-        <span class="search-ico">🔍</span>
-        <input type="text" id="search-input" placeholder="Search name, code, manager..." oninput="doSearch(this.value)" />
+    <div class="tree-toolbar" style="position: relative; z-index: 50;">
+      <div style="position:relative; display:flex; gap:8px; flex: 1; max-width: 360px;">
+        <div class="search-wrap" style="max-width: none; flex: 1;">
+          <span class="search-ico">🔍</span>
+          <input type="text" id="search-input" placeholder="Search name, code, manager... (Enter)" onkeydown="if(event.key === 'Enter') triggerTreeSearch(this.value)" />
+        </div>
+        <button class="btn-sm" onclick="event.stopPropagation(); triggerTreeSearch(document.getElementById('search-input').value)">Search</button>
+        <div id="tree-search-results" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:100;max-height:260px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+          <div id="tree-search-dropdown"></div>
+        </div>
       </div>
       <span class="search-count" id="search-count"></span>
       <button class="btn-sm" onclick="expandAll()">Expand All</button>
@@ -631,6 +637,7 @@ function buildNode(node, depth) {
 
   const card = document.createElement('div');
   card.className = 'node-card';
+  card.dataset.nodeId = node.id;
   card.dataset.st = [node.name, node.code, ...node.managers].join(' ').toLowerCase();
 
   const top = document.createElement('div');
@@ -713,31 +720,144 @@ function collapseAll() {
 }
 
 // ── SEARCH ──
-function doSearch(q) {
+function triggerTreeSearch(q) {
   const term = q.trim().toLowerCase();
-  let cnt = 0;
-  document.querySelectorAll('.node-card').forEach(card => {
-    card.classList.remove('search-match');
-    if (term && card.dataset.st && card.dataset.st.includes(term)) {
-      card.classList.add('search-match');
-      cnt++;
-      // expand ancestors
-      let el = card.closest('.tn');
-      while (el) {
-        const par = el.parentElement?.closest('.tn');
-        if (par) {
-          const kEl = par.querySelector(':scope>.tn-children');
-          const tEl = par.querySelector(':scope>.tn-row>.tn-toggle');
-          if (kEl) { kEl.classList.remove('collapsed'); }
-          if (tEl && !tEl.classList.contains('leaf')) tEl.innerHTML = '▼';
-        }
-        el = par;
+  const dd = document.getElementById('tree-search-dropdown');
+  const wrap = document.getElementById('tree-search-results');
+
+  if (!term || !APP) {
+    wrap.style.display = 'none';
+    dd.innerHTML = '';
+    return;
+  }
+
+  const matches = [];
+  APP.nodeReg.forEach(levelMap => {
+    levelMap.forEach(node => {
+      const matchText = [node.name, node.code, ...node.managers].join(' ').toLowerCase();
+      if (matchText.includes(term)) {
+        matches.push(node);
       }
-    }
+    });
   });
-  document.getElementById('search-count').textContent = term ? `${cnt} match${cnt!==1?'es':''}` : '';
+
+  if (!matches.length) {
+    dd.innerHTML = `<div style="padding:12px 14px;color:var(--text-muted);font-size:12px">No results found</div>`;
+    wrap.style.display = 'block';
+    document.getElementById('search-count').textContent = '0 matches';
+    return;
+  }
+
+  document.getElementById('search-count').textContent = `${matches.length} match${matches.length !== 1 ? 'es' : ''}`;
+
+  dd.innerHTML = '';
+  matches.slice(0, 50).forEach(node => {
+    const color = COLORS[node.level % COLORS.length];
+    const item = document.createElement('div');
+    item.style.cssText = 'padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;transition:background 0.15s;';
+    item.innerHTML = `
+      <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${color}20;color:${color};border:1px solid ${color}40;white-space:nowrap">${esc(node.levelName)}</span>
+      <span style="font-size:12px;font-weight:600;color:var(--text);flex:1">${esc(node.name)}</span>
+      <span style="font-family:monospace;font-size:10px;color:var(--text-dim)">${esc(node.code)}</span>
+    `;
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:4px;';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.style.cssText = 'background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;border-radius:4px;transition:all 0.15s;';
+    copyBtn.innerHTML = '📋';
+    copyBtn.title = 'Copy Name & Code';
+    copyBtn.onmouseenter = () => copyBtn.style.color = 'var(--accent)';
+    copyBtn.onmouseleave = () => copyBtn.style.color = 'var(--text-muted)';
+    copyBtn.onclick = (e) => {
+      e.stopPropagation();
+      copyNodeDetails(node.code, node.name);
+    };
+
+    const dlBtn = document.createElement('button');
+    dlBtn.style.cssText = 'background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;border-radius:4px;transition:all 0.15s;';
+    dlBtn.innerHTML = '📥';
+    dlBtn.title = 'Export Chain to Excel';
+    dlBtn.onmouseenter = () => dlBtn.style.color = 'var(--accent)';
+    dlBtn.onmouseleave = () => dlBtn.style.color = 'var(--text-muted)';
+    dlBtn.onclick = (e) => {
+      e.stopPropagation();
+      exportNodeChain(node.level, node.code, node.name);
+    };
+
+    actions.append(copyBtn, dlBtn);
+    item.appendChild(actions);
+
+    item.onmouseenter = () => item.style.background = 'var(--surface2)';
+    item.onmouseleave = () => item.style.background = '';
+    item.onclick = () => {
+      wrap.style.display = 'none';
+      collapseAll();
+      treeNavigateTo(node);
+    };
+    dd.appendChild(item);
+  });
+
+  if (matches.length > 50) {
+    const more = document.createElement('div');
+    more.style.cssText = 'padding:8px 14px;color:var(--text-muted);font-size:11px;text-align:center;';
+    more.textContent = `+${matches.length - 50} more results — refine your search`;
+    dd.appendChild(more);
+  }
+
+  wrap.style.display = 'block';
 }
-function clearSearch() { document.getElementById('search-input').value=''; doSearch(''); }
+
+function treeNavigateTo(node) {
+  document.querySelectorAll('.node-card').forEach(card => card.classList.remove('search-match'));
+
+  const card = Array.from(document.querySelectorAll('.node-card')).find(c => c.dataset.nodeId === node.id);
+  if (!card) return;
+
+  card.classList.add('search-match');
+
+  let currentEl = card.closest('.tn');
+  while (currentEl) {
+    const childrenContainer = currentEl.querySelector(':scope > .tn-children');
+    if (childrenContainer) {
+      childrenContainer.classList.remove('collapsed');
+    }
+    const toggleBtn = currentEl.querySelector(':scope > .tn-row > .tn-toggle');
+    if (toggleBtn && !toggleBtn.classList.contains('leaf')) {
+      toggleBtn.innerHTML = '▼';
+    }
+    
+    const parentContainer = currentEl.parentElement;
+    if (parentContainer && parentContainer.classList.contains('tn-children')) {
+      currentEl = parentContainer.closest('.tn');
+    } else {
+      currentEl = null;
+    }
+  }
+
+  const targetChildren = card.closest('.tn').querySelector(':scope > .tn-children');
+  if (targetChildren) {
+    targetChildren.classList.remove('collapsed');
+    const targetToggle = card.closest('.tn').querySelector(':scope > .tn-row > .tn-toggle');
+    if (targetToggle && !targetToggle.classList.contains('leaf')) {
+      targetToggle.innerHTML = '▼';
+    }
+  }
+
+  setTimeout(() => {
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 100);
+}
+
+function clearSearch() {
+  document.getElementById('search-input').value = '';
+  const wrap = document.getElementById('tree-search-results');
+  if (wrap) wrap.style.display = 'none';
+  document.getElementById('search-count').textContent = '';
+  document.querySelectorAll('.node-card').forEach(card => card.classList.remove('search-match'));
+  collapseAll();
+}
 
 // ── DUPS ──
 function renderDups() {
@@ -945,6 +1065,10 @@ function flowNavigateTo(node) {
 document.addEventListener('click', e => {
   if (!e.target.closest('#flow-search-results') && !e.target.closest('#flow-search')) {
     const wrap = document.getElementById('flow-search-results');
+    if (wrap) wrap.style.display = 'none';
+  }
+  if (!e.target.closest('#tree-search-results') && !e.target.closest('#search-input') && !e.target.closest('.btn-sm')) {
+    const wrap = document.getElementById('tree-search-results');
     if (wrap) wrap.style.display = 'none';
   }
 });
